@@ -83,16 +83,16 @@ export declare interface AuthParameters {
 }
 
 export declare interface AuthStatus {
-  auth_status: number;
-  auth_status_name: string;
-  error_src: number;
-  error_src_name: string;
-  bonded: boolean;
-  sm1_levels: number;
-  sm2_levels: number;
-  kdist_own: any; // FIXME:
-  kdist_peer: any; // FIXME:
-  keyset: any; // FIXME:
+  auth_status: number,
+  auth_status_name: string,
+  error_src: number,
+  error_src_name: string,
+  bonded: boolean,
+  sm1_levels: number,
+  sm2_levels: number,
+  kdist_own: any, // FIXME:
+  kdist_peer: any, // FIXME:
+  keyset: any, // FIXME:
 }
 
 export declare interface ConnectionOptions {
@@ -114,7 +114,6 @@ export declare interface AdapterState {
   addressType: string;
   name: string;
   available: boolean;
-  bleEnabled: boolean;
   scanning: boolean;
   advertising: boolean;
   connecting: boolean;
@@ -159,7 +158,7 @@ export declare interface CharacteristicProperties {
   write: boolean;
   notify: boolean;
   indicate: boolean;
-  auth_signed_wr: boolean;
+  auth_signed_wr: boolean
 }
 
 export declare interface CharacteristicExtProperties extends CharacteristicProperties {
@@ -211,7 +210,7 @@ declare class Adapter extends EventEmitter {
   requestAttMtu(deviceInstanceId: string, mtu: number, callback?: (err: any, value: number) => void): void;
   getCurrentAttMtu(deviceInstanceId: string): number|undefined;
 
-  getService(serviceInstanceId: string): Service;
+  getService(serviceInstanceId: string, callback?: (err: any, service: Service) => void): Service;
   getServices(deviceInstanceId: string, callback?: (err: any, services: Array<Service>) => void): void;
   getCharacteristic(characteristicId: string): Characteristic;
   getCharacteristics(serviceInstanceId: string, callback?: (err: any, services: Array<Characteristic>) => void): void;
@@ -271,14 +270,14 @@ declare class Adapter extends EventEmitter {
 
 export declare class AdapterFactory extends EventEmitter {
   static getInstance(): AdapterFactory;
-  getAdapters(callback?: (err: any, adapters: Adapter[]) => void): void;
-  createAdapter(sdVersion: 'v2' | 'v3', path: string, instanceId: string): Adapter;
+  getAdapters(callback?: (err: any, adapters: Adapter[]) => void);
+  createAdapter(sdVersion: 'v2' | 'v3', comName: string, instanceId: string): Adapter;
 }
 
 export declare class ServiceFactory {
-  createService(uuid: string, serviceType: string): Service;
-  createCharacteristic(service: Service, uuid: string, value: Array<number>, properties: any, options: any): Characteristic;
-  createDescriptor(characteristic: Characteristic, uuid: string, value: Array<number>, options: any): Descriptor;
+  createService(uuid: string, serviceType: string);
+  createCharacteristic(service: Service, uuid: string, value: Array<number>, properties: any, options: any);
+  createDescriptor(characteristic: Characteristic, uuid: string, value: Array<number>, options: any);
 }
 
 export declare interface KeyPair {

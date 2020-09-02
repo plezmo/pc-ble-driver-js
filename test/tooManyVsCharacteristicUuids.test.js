@@ -1,4 +1,4 @@
-/* Copyright (c) 2010 - 2019, Nordic Semiconductor ASA
+/* Copyright (c) 2010 - 2017, Nordic Semiconductor ASA
  *
  * All rights reserved.
  *
@@ -49,38 +49,26 @@ const PERIPHERAL_DEVICE_ADDRESS_TYPE = 'BLE_GAP_ADDR_TYPE_RANDOM_STATIC';
 const CENTRAL_DEVICE_ADDRESS = 'FF:11:22:33:AA:CF';
 const CENTRAL_DEVICE_ADDRESS_TYPE = 'BLE_GAP_ADDR_TYPE_RANDOM_STATIC';
 
-const serialNumberA = process.env.DEVICE_A_SERIAL_NUMBER;
-if (!serialNumberA) {
-    console.log('Missing env DEVICE_A_SERIAL_NUMBER=<SN e.g. from nrf-device-lister>');
-    process.exit(1);
-}
+async function onConnected(adapter, peerDevice) {
+    const services = await new Promise(resolve => {
+        adapter.getServices(peerDevice.instanceId, (getServicesErr, readServices) => {
+            expect(getServicesErr).toBeUndefined();
+            resolve(readServices);
+        });
+    });
 
-const serialNumberB = process.env.DEVICE_B_SERIAL_NUMBER;
-if (!serialNumberA) {
-    console.log('Missing env DEVICE_B_SERIAL_NUMBER=<SN e.g. from nrf-device-lister>');
-    process.exit(1);
-}
+    const serviceId = services[2].instanceId;
 
-function callbackPromise(promiseBody) {
-    return new Promise((resolve, reject) => {
-        function callbackFactory() {
-            const trace = {};
-            Error.captureStackTrace(trace, callbackFactory);
-            function callback(err, val) {
-                if (err) {
-                    let e = Error(err);
-                    Error.captureStackTrace(e, callback);
-                    e = e.stack.concat(trace.stack);
-                    reject(e);
-                } else resolve(val);
-            }
-            return callback;
-        }
-        promiseBody(callbackFactory);
+    await new Promise(resolve => {
+        adapter.getCharacteristics(serviceId, getCharacteristicsErr => {
+            expect(getCharacteristicsErr).toBeDefined();
+            expect(getCharacteristicsErr).toBe('Failed to add characteristic uuid to driver');
+            resolve(getCharacteristicsErr);
+        });
     });
 }
 
-describe('During attribute discovery, the API', () => {
+describe('the API', async () => {
     let centralAdapter;
     let peripheralAdapter;
 
@@ -88,8 +76,8 @@ describe('During attribute discovery, the API', () => {
         // Errors here will not stop the tests from running.
         // Issue filed regarding this: https://github.com/facebook/jest/issues/2713
 
-        centralAdapter = await grabAdapter(serialNumberA);
-        peripheralAdapter = await grabAdapter(serialNumberB);
+        centralAdapter = await grabAdapter();
+        peripheralAdapter = await grabAdapter();
 
         await Promise.all([
             setupAdapter(centralAdapter, '#CENTRAL', 'central', CENTRAL_DEVICE_ADDRESS, CENTRAL_DEVICE_ADDRESS_TYPE),
@@ -102,32 +90,27 @@ describe('During attribute discovery, the API', () => {
             releaseAdapter(peripheralAdapter.state.serialNumber)]);
     });
 
-    it('allows for many vendor specific UUIDs', async () => {
+    it('adding too many vendor specific characteristic uuids to driver will return an error', async () => {
         expect(centralAdapter).toBeDefined();
         expect(peripheralAdapter).toBeDefined();
 
-        await common.addRandomServicesAndCharacteristicsToAdapter(serviceFactory, peripheralAdapter, 8, 0);
-        await common.addRandomServicesAndCharacteristicsToAdapter(serviceFactory, centralAdapter, 8, 0);
+        await common.addRandomServicesAndCharacteristicsToAdapter(serviceFactory, peripheralAdapter, 1, 8);
+        await common.addRandomServicesAndCharacteristicsToAdapter(serviceFactory, centralAdapter, 1, 8);
 
-        const connectionPromise = new Promise((resolve, reject) => {
-            centralAdapter.once('deviceConnected', resolve);
-            centralAdapter.once('error', reject);
+        const deviceConnectedCentral = new Promise((resolve, reject) => {
+            centralAdapter.once('deviceConnected', peripheralDevice => {
+                onConnected(centralAdapter, peripheralDevice).then(() => {
+                    resolve({
+                        address: peripheralDevice.address,
+                        type: peripheralDevice.addressType,
+                        instanceId: peripheralDevice.instanceId,
+                    });
+                }).catch(reject);
+            });
         });
 
         await common.startAdvertising(peripheralAdapter);
         await common.connect(centralAdapter, { address: PERIPHERAL_DEVICE_ADDRESS, type: PERIPHERAL_DEVICE_ADDRESS_TYPE });
-
-        const connection = await connectionPromise;
-        const services = await callbackPromise(callback => {
-            centralAdapter.getServices(connection.instanceId, callback());
-        });
-
-        const service = services[2];
-
-        const characteristicsPromise = callbackPromise(callback => {
-            centralAdapter.getCharacteristics(service.instanceId, callback());
-        });
-
-        await outcome([characteristicsPromise]);
+        await outcome([deviceConnectedCentral]);
     });
 });

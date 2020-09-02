@@ -53,18 +53,6 @@ const BLE_UUID_HEART_RATE_SERVICE = '180d';
 const BLE_UUID_HEART_RATE_MEASUREMENT_CHAR = '2a37';
 const BLE_UUID_CCCD = '2902';
 
-const serialNumberA = process.env.DEVICE_A_SERIAL_NUMBER;
-if (!serialNumberA) {
-    console.log('Missing env DEVICE_A_SERIAL_NUMBER=<SN e.g. from nrf-device-lister>');
-    process.exit(1);
-}
-
-const serialNumberB = process.env.DEVICE_B_SERIAL_NUMBER;
-if (!serialNumberA) {
-    console.log('Missing env DEVICE_B_SERIAL_NUMBER=<SN e.g. from nrf-device-lister>');
-    process.exit(1);
-}
-
 function connect(adapter, connectToAddress) {
     return new Promise((resolve, reject) => {
         const options = {
@@ -271,13 +259,12 @@ async function onConnected(adapter, peerDevice, desiredMTU) {
     });
 }
 
-describe('the API', () => {
+describe('the API', async () => {
     let centralAdapter;
     let peripheralAdapter;
 
     beforeAll(async () => {
-        centralAdapter = await grabAdapter(serialNumberA);
-        peripheralAdapter = await grabAdapter(serialNumberB);
+        [centralAdapter, peripheralAdapter] = await Promise.all([grabAdapter(), grabAdapter()]);
 
         await Promise.all([
             setupAdapter(centralAdapter, '#CENTRAL', 'central', CENTRAL_DEVICE_ADDRESS, CENTRAL_DEVICE_ADDRESS_TYPE),
@@ -317,6 +304,20 @@ describe('the API', () => {
             });
         });
 
+        const dataLengthChangedCentral = new Promise(resolve => {
+            centralAdapter.once('dataLengthChanged', (peripheralDevice, dataLength) => {
+                debug(`central dataLengthChanged to ${dataLength}`);
+                resolve(dataLength);
+            });
+        });
+
+        const dataLengthChangedPeripheral = new Promise(resolve => {
+            peripheralAdapter.once('dataLengthChanged', (centralDevice, dataLength) => {
+                debug(`peripheral dataLengthChanged to ${dataLength}`);
+                resolve(dataLength);
+            });
+        });
+
         const attMtuChangedCentral = new Promise(resolve => {
             centralAdapter.once('attMtuChanged', (peripheralDevice, attMtu) => {
                 debug(`central attMtuChanged to ${attMtu}`);
@@ -335,19 +336,20 @@ describe('the API', () => {
 
         const [
             deviceConnectedCentralResult,
-            attMtuLengthCentralResult,
-            attMtuLengthPeripheralResult,
-        ] = await outcome([
-            deviceConnectedCentral,
-            attMtuChangedCentral,
-            attMtuChangedPeripheral,
-        ], 10000);
+            dataLengthCentralResult, attMtuLengthCentralResult,
+            dataLengthPeripheralResult, attMtuLengthPeripheralResult] = await outcome([
+                deviceConnectedCentral,
+                dataLengthChangedCentral, attMtuChangedCentral,
+                dataLengthChangedPeripheral, attMtuChangedPeripheral]);
 
 
         expect(deviceConnectedCentralResult.address).toBe(PERIPHERAL_DEVICE_ADDRESS);
         expect(deviceConnectedCentralResult.type).toBe(PERIPHERAL_DEVICE_ADDRESS_TYPE);
 
+        expect(dataLengthCentralResult).toBe(maxDataLength);
         expect(attMtuLengthCentralResult).toBe(maxMTU);
+
+        expect(dataLengthPeripheralResult).toBe(maxDataLength);
         expect(attMtuLengthPeripheralResult).toBe(maxMTU);
 
         await disconnect(centralAdapter, deviceConnectedCentralResult);

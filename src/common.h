@@ -44,12 +44,6 @@
 
 #include "sd_rpc.h"
 
-#if !(defined NRF_SD_BLE_API_VERSION)
-#error "NRF_SD_BLE_API_VERSION is not defined. Aborting compilation."
-#elif !(NRF_SD_BLE_API_VERSION == 2 || NRF_SD_BLE_API_VERSION == 5)
-#error "SoftDevice API version not supported. Must be API version 2 or 5."
-#endif
-
 #define NAME_MAP_ENTRY(EXP) { EXP, ""#EXP"" }
 #define ERROR_STRING_SIZE 1024
 #define BATON_CONSTRUCTOR(BatonType) BatonType(v8::Local<v8::Function> callback) : Baton(callback) {}
@@ -135,8 +129,6 @@ public:
 
     static bool IsBetween(const uint8_t value, const uint8_t min, const uint8_t max);
     static bool EnsureAsciiNumbers(uint8_t *value, const int length);
-
-    static int WriteUtf8(v8::Local<v8::String>& v8Str, char *buffer, int length = -1);
 };
 
 template<typename EventType>
@@ -219,7 +211,7 @@ public:
             throw std::string("number");
         }
 
-        return Nan::To<uint32_t>(js).FromJust();
+        return static_cast<NativeType>(js->Uint32Value());
     }
 
     static NativeType getNativeSigned(v8::Local<v8::Value> js)
@@ -229,7 +221,7 @@ public:
             throw std::string("number");
         }
 
-        return Nan::To<int32_t>(js).FromJust();
+        return static_cast<NativeType>(js->Int32Value());
     }
 
     static NativeType getNativeFloat(v8::Local<v8::Value> js)
@@ -239,7 +231,7 @@ public:
             throw std::string("number");
         }
 
-        return Nan::To<double>(js).FromJust();
+        return static_cast<NativeType>(js->NumberValue());
     }
 
     static NativeType getNativeBool(v8::Local<v8::Value> js)
@@ -249,27 +241,27 @@ public:
             throw std::string("bool");
         }
 
-        return Nan::To<bool>(js).FromJust();
+        return static_cast<NativeType>(js->ToBoolean()->BooleanValue());
     }
 
     static NativeType getNativeUnsigned(v8::Local<v8::Object> js, const char *name)
     {
-        return getNativeUnsigned(Nan::Get(js, Nan::New(name).ToLocalChecked()).ToLocalChecked());
+        return getNativeUnsigned(js->Get(Nan::New(name).ToLocalChecked()));
     }
 
     static NativeType getNativeSigned(v8::Local<v8::Object> js, const char *name)
     {
-        return getNativeSigned(Nan::Get(js, Nan::New(name).ToLocalChecked()).ToLocalChecked());
+        return getNativeSigned(js->Get(Nan::New(name).ToLocalChecked()));
     }
 
     static NativeType getNativeFloat(v8::Local<v8::Object> js, const char *name)
     {
-        return getNativeFloat(Nan::Get(js, Nan::New(name).ToLocalChecked()).ToLocalChecked());
+        return getNativeFloat(js->Get(Nan::New(name).ToLocalChecked()));
     }
 
     static NativeType getNativeBool(v8::Local<v8::Object> js, const char *name)
     {
-        return getNativeBool(Nan::Get(js, Nan::New(name).ToLocalChecked()).ToLocalChecked());
+        return getNativeBool(js->Get(Nan::New(name).ToLocalChecked()));
     }
 };
 
@@ -327,7 +319,7 @@ public:
     static v8::Handle<v8::Value> toJsNumber(double nativeValue);
     static v8::Handle<v8::Value> toJsBool(uint8_t nativeValue);
     static v8::Handle<v8::Value> toJsValueArray(uint8_t *nativeValue, uint16_t length);
-    static v8::Handle<v8::Value> toJsValueArray(const uint8_t *nativeValue, uint16_t length);
+	static v8::Handle<v8::Value> toJsValueArray(const uint8_t *nativeValue, uint16_t length);
     static v8::Handle<v8::Value> toJsString(const char *cString);
     static v8::Handle<v8::Value> toJsString(const char *cString, uint16_t length);
     static v8::Handle<v8::Value> toJsString(uint8_t *cString, uint16_t length);
@@ -339,7 +331,7 @@ public:
     static v8::Local<v8::Function> getCallbackFunction(v8::Local<v8::Value> js);
 
     static uint8_t extractHexHelper(char text);
-    static std::vector<uint8_t> extractHex(v8::Local<v8::Value> js);
+    static uint8_t *extractHex(v8::Local<v8::Value> js);
     static v8::Handle<v8::Value> encodeHex(const char *text, int length);
 };
 

@@ -87,19 +87,7 @@ adapter_t *Adapter::getInternalAdapter() const
     return adapter;
 }
 
-// This compilation unit will be linked several times. So
-// log_handler must not have external linkage. Otherwise, we get
-// problems like a v3 Adapter getting cast into a v2 Adapter.
-// Ideally, only things specifically needing external linkage
-// should have it.
-namespace {
-    // Turns out the right way to declare a function that can be
-    // called trough a pointer in C code is simply to declare it
-    // having the type we want that was typedef-ed inside a
-    // extern-C block. `uv_async_cb` pretty much fits the bill,
-    // but.. it's pointer to callback function, while we are
-    // declaring the actual function. So:
-    std::remove_pointer<uv_async_cb>::type event_handler;
+extern "C" {
     void event_handler(uv_async_t *handle)
     {
         auto adapter = static_cast<Adapter *>(handle->data);
@@ -115,7 +103,6 @@ namespace {
         }
     }
 
-    std::remove_pointer<uv_async_cb>::type event_interval_handler;
     void event_interval_handler(uv_timer_t *handle)
     {
         auto adapter = static_cast<Adapter *>(handle->data);
@@ -132,16 +119,16 @@ namespace {
     }
 }
 
-void Adapter::initEventHandling(std::unique_ptr<Nan::Callback> callback, uint32_t interval)
+void Adapter::initEventHandling(std::unique_ptr<Nan::Callback> &callback, uint32_t interval)
 {
     eventInterval = interval;
-    asyncEvent = std::make_unique<uv_async_t>();
+    asyncEvent = new uv_async_t();
 
     // Setup event related functionality
     eventCallback = std::move(callback);
     asyncEvent->data = static_cast<void *>(this);
 
-    if (uv_async_init(uv_default_loop(), asyncEvent.get(), event_handler) != 0)
+    if (uv_async_init(uv_default_loop(), asyncEvent, event_handler) != 0)
     {
         std::cerr << "Not able to create a new async event handler." << std::endl;
         std::terminate();
@@ -163,38 +150,26 @@ void Adapter::initEventHandling(std::unique_ptr<Nan::Callback> callback, uint32_
 
     if (eventIntervalTimer == nullptr)
     {
-        eventIntervalTimer = std::make_unique<uv_timer_t>();
+        eventIntervalTimer = new uv_timer_t();
     }
 
     // Setup event interval functionality
     eventIntervalTimer->data = static_cast<void *>(this);
 
-    if (uv_timer_init(uv_default_loop(), eventIntervalTimer.get()) != 0)
+    if (uv_timer_init(uv_default_loop(), eventIntervalTimer) != 0)
     {
         std::cerr << "Not able to create a new async event interval timer." << std::endl;
         std::terminate();
     }
 
-    if (uv_timer_start(eventIntervalTimer.get(), event_interval_handler, eventInterval, eventInterval) != 0)
+    if (uv_timer_start(eventIntervalTimer, event_interval_handler, eventInterval, eventInterval) != 0)
     {
         std::cerr << "Not able to create a new event interval handler." << std::endl;
         std::terminate();
     }
 }
 
-// This compilation unit will be linked several times. So
-// log_handler must not have external linkage. Otherwise, we get
-// problems like a v3 Adapter getting cast into a v2 Adapter.
-// Ideally, only things specifically needing external linkage
-// should have it.
-namespace {
-    // Turns out the right way to declare a function that can be
-    // called trough a pointer in C code is simply to declare it
-    // having the type we want that was typedef-ed inside a
-    // extern-C block. `uv_async_cb` pretty much fits the bill,
-    // but.. it's pointer to callback function, while we are
-    // declaring the actual function. So:
-    std::remove_pointer<uv_async_cb>::type log_handler;
+extern "C" {
     void log_handler(uv_async_t *handle)
     {
         auto adapter = static_cast<Adapter *>(handle->data);
@@ -211,33 +186,21 @@ namespace {
     }
 }
 
-void Adapter::initLogHandling(std::unique_ptr<Nan::Callback> callback)
+void Adapter::initLogHandling(std::unique_ptr<Nan::Callback> &callback)
 {
     // Setup event related functionality
-    asyncLog = std::make_unique<uv_async_t>();
+    asyncLog = new uv_async_t();
     logCallback = std::move(callback);
     asyncLog->data = static_cast<void *>(this);
 
-    if (uv_async_init(uv_default_loop(), asyncLog.get(), log_handler) != 0)
+    if (uv_async_init(uv_default_loop(), asyncLog, log_handler) != 0)
     {
         std::cerr << "Not able to create a new event log handler." << std::endl;
         std::terminate();
     }
 }
 
-// This compilation unit will be linked several times. So
-// log_handler must not have external linkage. Otherwise, we get
-// problems like a v3 Adapter getting cast into a v2 Adapter.
-// Ideally, only things specifically needing external linkage
-// should have it.
-namespace {
-    // Turns out the right way to declare a function that can be
-    // called trough a pointer in C code is simply to declare it
-    // having the type we want that was typedef-ed inside a
-    // extern-C block. `uv_async_cb` pretty much fits the bill,
-    // but.. it's pointer to callback function, while we are
-    // declaring the actual function. So:
-    std::remove_pointer<uv_async_cb>::type status_handler;
+extern "C" {
     void status_handler(uv_async_t *handle)
     {
         auto adapter = static_cast<Adapter *>(handle->data);
@@ -254,72 +217,78 @@ namespace {
     }
 }
 
-void Adapter::initStatusHandling(std::unique_ptr<Nan::Callback> callback)
+void Adapter::initStatusHandling(std::unique_ptr<Nan::Callback> &callback)
 {
     // Setup event related functionality
-    asyncStatus = std::make_unique<uv_async_t>();
+    asyncStatus = new uv_async_t();
     statusCallback = std::move(callback);
     asyncStatus->data = static_cast<void *>(this);
 
-    if (uv_async_init(uv_default_loop(), asyncStatus.get(), status_handler) != 0)
+    if (uv_async_init(uv_default_loop(), asyncStatus, status_handler) != 0)
     {
         std::cerr << "Not able to create a new status handler." << std::endl;
         std::terminate();
     }
 }
 
-// Helper function for cleanUpV8Resources for closing uv_*_t
-// handles. It is also suitable as a Deleter (template argment
-// of unique_ptr).
-namespace {
-    template<typename T_uv_handle_t_derived>
-    void close_uv_handle(std::unique_ptr<T_uv_handle_t_derived> handle)
-    {
-        // Ensure the type is expected. All the other subtypes
-        // of uv_handle_t can be added as needed.
-        static_assert(std::is_same<T_uv_handle_t_derived, uv_async_t>::value
-                   || std::is_same<T_uv_handle_t_derived, uv_timer_t>::value
-                    , "Not sure if T_uv_handle_t_derived is a uv_handle_t.");
-
-        // The callback from uv_close is the earliest the handle
-        // memory can be released according to libuv. C++ delete
-        // requires the pointer have the original type.
-        auto raw_handle = reinterpret_cast<uv_handle_t *>(handle.release());
-        uv_close(raw_handle, [](uv_handle_t * raw_handle){
-                delete reinterpret_cast<T_uv_handle_t_derived *>(raw_handle);
-        });
-    }
-}
-
 void Adapter::cleanUpV8Resources()
 {
-    uv_mutex_lock(&adapterCloseMutex);
+    uv_mutex_lock(adapterCloseMutex);
 
     if (asyncStatus != nullptr)
     {
-        close_uv_handle(std::move(asyncStatus));
+        auto handle = reinterpret_cast<uv_handle_t *>(asyncStatus);
+        uv_close(handle, [](uv_handle_t *handle) {
+            delete handle;
+        });
         this->statusCallback.reset();
+
+        asyncStatus = nullptr;
     }
 
     if (eventIntervalTimer != nullptr)
     {
-        uv_timer_stop(eventIntervalTimer.get());
-        close_uv_handle(std::move(eventIntervalTimer));
+        // Deallocate resources related to the event handling interval timer
+        if (uv_timer_stop(eventIntervalTimer) != 0)
+        {
+            std::terminate();
+        }
+
+        auto handle = reinterpret_cast<uv_handle_t *>(eventIntervalTimer);
+        uv_close(handle, [](uv_handle_t *handle)
+        {
+            delete handle;
+        });
+
+        eventIntervalTimer = nullptr;
     }
 
     if (asyncEvent != nullptr)
     {
-        close_uv_handle(std::move(asyncEvent));
+        auto handle = reinterpret_cast<uv_handle_t *>(asyncEvent);
+
+        uv_close(handle, [](uv_handle_t *handle)
+        {
+            delete handle;
+        });
         this->eventCallback.reset();
+
+        asyncEvent = nullptr;
     }
 
     if (asyncLog != nullptr)
     {
-        close_uv_handle(std::move(asyncLog));
+        auto logHandle = reinterpret_cast<uv_handle_t *>(asyncLog);
+        uv_close(logHandle, [](uv_handle_t *handle)
+        {
+            delete handle;
+        });
         this->logCallback.reset();
+
+        asyncLog = nullptr;
     }
 
-    uv_mutex_unlock(&adapterCloseMutex);
+    uv_mutex_unlock(adapterCloseMutex);
 }
 
 void Adapter::initGeneric(v8::Local<v8::FunctionTemplate> tpl)
@@ -335,12 +304,9 @@ void Adapter::initGeneric(v8::Local<v8::FunctionTemplate> tpl)
     Nan::SetPrototypeMethod(tpl, "replyUserMemory", ReplyUserMemory);
     Nan::SetPrototypeMethod(tpl, "setBleOption", SetBleOption);
     Nan::SetPrototypeMethod(tpl, "getBleOption", GetBleOption);
+    Nan::SetPrototypeMethod(tpl, "bleCfgSet", BleCfgSet);
 
     Nan::SetPrototypeMethod(tpl, "getStats", GetStats);
-
-#if NRF_SD_BLE_API_VERSION >= 5
-    Nan::SetPrototypeMethod(tpl, "setBleConfig", SetBleConfig);
-#endif
 }
 
 void Adapter::initGap(v8::Local<v8::FunctionTemplate> tpl)
@@ -356,6 +322,7 @@ void Adapter::initGap(v8::Local<v8::FunctionTemplate> tpl)
     Nan::SetPrototypeMethod(tpl, "gapStopRSSI", GapStopRSSI);
     Nan::SetPrototypeMethod(tpl, "gapGetRSSI", GapGetRSSI);
     Nan::SetPrototypeMethod(tpl, "gapStartScan", GapStartScan);
+    Nan::SetPrototypeMethod(tpl, "gapContinueScan", GapContinueScan);
     Nan::SetPrototypeMethod(tpl, "gapStopScan", GapStopScan);
     Nan::SetPrototypeMethod(tpl, "gapConnect", GapConnect);
     Nan::SetPrototypeMethod(tpl, "gapCancelConnect", GapCancelConnect);
@@ -377,10 +344,6 @@ void Adapter::initGap(v8::Local<v8::FunctionTemplate> tpl)
     Nan::SetPrototypeMethod(tpl, "gapNotifyKeypress", GapNotifyKeypress);
     Nan::SetPrototypeMethod(tpl, "gapGetLescOobData", GapGetLESCOOBData);
     Nan::SetPrototypeMethod(tpl, "gapSetLescOobData", GapSetLESCOOBData);
-#if NRF_SD_BLE_API_VERSION >= 5
-    Nan::SetPrototypeMethod(tpl, "gapDataLengthUpdate", GapDataLengthUpdate);
-    Nan::SetPrototypeMethod(tpl, "gapPhyUpdate", GapPhyUpdate);
-#endif
 }
 
 void Adapter::initGattC(v8::Local<v8::FunctionTemplate> tpl)
@@ -394,7 +357,7 @@ void Adapter::initGattC(v8::Local<v8::FunctionTemplate> tpl)
     Nan::SetPrototypeMethod(tpl, "gattcReadCharacteristicValues", GattcReadCharacteristicValues);
     Nan::SetPrototypeMethod(tpl, "gattcWrite", GattcWrite);
     Nan::SetPrototypeMethod(tpl, "gattcConfirmHandleValue", GattcConfirmHandleValue);
-#if NRF_SD_BLE_API_VERSION >= 5
+#if NRF_SD_BLE_API_VERSION >= 3
     Nan::SetPrototypeMethod(tpl, "gattcExchangeMtuRequest", GattcExchangeMtuRequest);
 #endif
 }
@@ -409,7 +372,7 @@ void Adapter::initGattS(v8::Local<v8::FunctionTemplate> tpl)
     Nan::SetPrototypeMethod(tpl, "gattsSetValue", GattsSetValue);
     Nan::SetPrototypeMethod(tpl, "gattsGetValue", GattsGetValue);
     Nan::SetPrototypeMethod(tpl, "gattsReplyReadWriteAuthorize", GattsReplyReadWriteAuthorize);
-#if NRF_SD_BLE_API_VERSION >= 5
+#if NRF_SD_BLE_API_VERSION >= 3
     Nan::SetPrototypeMethod(tpl, "gattsExchangeMtuReply", GattsExchangeMtuReply);
 #endif
 }
@@ -423,7 +386,17 @@ Adapter::Adapter()
     eventCallbackBatchEventTotalCount = 0;
     eventCallbackBatchNumber = 0;
 
-    if (uv_mutex_init(&adapterCloseMutex) != 0)
+    eventCallback = nullptr;
+
+    eventIntervalTimer = nullptr;
+
+    asyncEvent = nullptr;
+    asyncLog = nullptr;
+    asyncStatus = nullptr;
+
+    adapterCloseMutex = new uv_mutex_t();
+
+    if (uv_mutex_init(adapterCloseMutex) != 0)
     {
         std::cerr << "Not able to create adapterCloseMutex! Terminating." << std::endl;
         std::terminate();
@@ -440,7 +413,8 @@ Adapter::~Adapter()
     // Remove callbacks and cleanup uv_handle_t instances
     cleanUpV8Resources();
 
-    uv_mutex_destroy(&adapterCloseMutex);
+    uv_mutex_destroy(adapterCloseMutex);
+    delete adapterCloseMutex;
 }
 
 NAN_METHOD(Adapter::New)

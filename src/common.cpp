@@ -84,7 +84,7 @@ static name_map_t error_message_name_map =
     NAME_MAP_ENTRY(BLE_ERROR_NOT_ENABLED),
     NAME_MAP_ENTRY(BLE_ERROR_INVALID_CONN_HANDLE),
     NAME_MAP_ENTRY(BLE_ERROR_INVALID_ATTR_HANDLE),
-#ifdef BLE_ERROR_NO_TX_PACKETS
+#if NRF_SD_BLE_API_VERSION < 5
     NAME_MAP_ENTRY(BLE_ERROR_NO_TX_PACKETS),
 #endif
     NAME_MAP_ENTRY(BLE_ERROR_INVALID_ROLE),
@@ -112,7 +112,7 @@ static name_map_t error_message_name_map =
     NAME_MAP_ENTRY(BLE_ERROR_GATTS_SYS_ATTR_MISSING),
 
     // L2CAP related errors
-#ifdef BLE_ERROR_L2CAP_CID_IN_USE
+#if NRF_SD_BLE_API_VERSION < 5
     NAME_MAP_ENTRY(BLE_ERROR_L2CAP_CID_IN_USE),
 #endif
 };
@@ -326,8 +326,7 @@ uint8_t *ConversionUtility::getNativePointerToUint8(v8::Local<v8::Value> js)
 
     for (uint32_t i = 0; i < length; ++i)
     {
-        string[i] = static_cast<uint8_t>(
-            Nan::Get(jsarray, i).ToLocalChecked()->Uint32Value(Nan::GetCurrentContext()).FromJust());
+        string[i] = static_cast<uint8_t>(jsarray->Get(Nan::New(i))->Uint32Value());
     }
 
     return string;
@@ -350,8 +349,7 @@ uint16_t *ConversionUtility::getNativePointerToUint16(v8::Local<v8::Value>js)
 
     for (uint32_t i = 0; i < length; ++i)
     {
-        string[i] = static_cast<uint16_t>(
-            Nan::Get(jsarray, i).ToLocalChecked()->Uint32Value(Nan::GetCurrentContext()).FromJust());
+        string[i] = static_cast<uint16_t>(jsarray->Get(Nan::New(i))->Uint32Value());
     }
 
     return string;
@@ -364,7 +362,7 @@ v8::Local<v8::Object> ConversionUtility::getJsObject(v8::Local<v8::Value>js)
         throw std::string("object");
     }
 
-    return Nan::To<v8::Object>(js).ToLocalChecked();
+    return js->ToObject();
 }
 
 v8::Local<v8::Object> ConversionUtility::getJsObject(v8::Local<v8::Object> js, const char *name)
@@ -506,7 +504,7 @@ v8::Handle<v8::Value> ConversionUtility::toJsValueArray(uint8_t *nativeData, uin
 
     for (int i = 0; i < length; ++i)
     {
-        Nan::Set(valueArray, i, ConversionUtility::toJsNumber(nativeData[i]));
+        valueArray->Set(i, ConversionUtility::toJsNumber(nativeData[i]));
     }
 
     return scope.Escape(valueArray);
@@ -514,7 +512,7 @@ v8::Handle<v8::Value> ConversionUtility::toJsValueArray(uint8_t *nativeData, uin
 
 v8::Handle<v8::Value> ConversionUtility::toJsValueArray(const uint8_t *nativeData, uint16_t length)
 {
-    return ConversionUtility::toJsValueArray(const_cast<uint8_t *>(nativeData), length);
+	return ConversionUtility::toJsValueArray(const_cast<uint8_t *>(nativeData), length);
 }
 
 v8::Handle<v8::Value> ConversionUtility::toJsString(const char *cString)
@@ -526,7 +524,7 @@ v8::Handle<v8::Value> ConversionUtility::toJsString(const char *cString, uint16_
 {
     Nan::EscapableHandleScope scope;
     auto name = static_cast<char*>(malloc(length + 1));
-    assert(name != nullptr);
+	assert(name != nullptr);
 
     memset(name, 0, length + 1); // Zero terminate the name
     memcpy(name, cString, length);
@@ -612,17 +610,19 @@ uint8_t ConversionUtility::extractHexHelper(char text)
     return 0xFF;
 }
 
-std::vector<uint8_t> ConversionUtility::extractHex(v8::Local<v8::Value> js)
+uint8_t *ConversionUtility::extractHex(v8::Local<v8::Value> js)
 {
     v8::Local<v8::String> jsString = v8::Local<v8::String>::Cast(js);
     auto length = jsString->Length();
-    auto cString = std::vector<char>(length + 1);
+    auto cString = static_cast<char *>(malloc(sizeof(char) * (length + 1)));
+    memset(cString, 0, length + 1);
 
-    Utility::WriteUtf8(jsString, cString.data(), length);
+    jsString->WriteUtf8(cString, length);
 
     auto size = (length / 2);
 
-    auto retArray = std::vector<uint8_t>(size);
+    auto retArray = static_cast<uint8_t *>(malloc(sizeof(uint8_t) * size));
+    memset(retArray, 0, size);
 
     for (auto i = 0, j = size - 1; i < length; i += 2, j--)
     {
@@ -731,7 +731,7 @@ bool Utility::Set(v8::Handle<v8::Object> target, const char *name, v8::Local<v8:
 
 bool Utility::Has(v8::Handle<v8::Object> target, const char *name)
 {
-    return target->Has(target->CreationContext(), Nan::New(name).ToLocalChecked()).FromMaybe(false);
+    return target->Has(Nan::New(name).ToLocalChecked());
 }
 
 void Utility::SetReturnValue(Nan::NAN_METHOD_ARGS_TYPE info, v8::Local<v8::Object> value)
@@ -789,15 +789,6 @@ bool Utility::EnsureAsciiNumbers(uint8_t *value, const int length)
     return true;
 }
 
-int Utility::WriteUtf8(v8::Local<v8::String> &v8Str, char *buffer, int length)
-{
-#if NODE_MAJOR_VERSION >= 11
-    return v8Str->WriteUtf8(v8::Isolate::GetCurrent(), buffer, length);
-#else
-    return v8Str->WriteUtf8(buffer, length);
-#endif
-}
-
 v8::Local<v8::Value> ErrorMessage::getErrorMessage(const int errorCode, const std::string customMessage)
 {
     Nan::EscapableHandleScope scope;
@@ -828,19 +819,14 @@ v8::Local<v8::Value> ErrorMessage::getErrorMessage(const int errorCode, const st
         case NRF_ERROR_RESOURCES:
         default:
         {
-            std::ostringstream errorStringStream;
-            errorStringStream << "Error occured when " << customMessage << ". "
-                << "Errorcode: " << ConversionUtility::valueToString(errorCode, error_message_name_map) << " (0x" << std::hex << errorCode << ")" << std::endl;
-
-            v8::Local<v8::Value> error = Nan::Error(errorStringStream.str().c_str());
-            v8::Local<v8::Object> errorObject = error.As<v8::Object>();
+            // Not populating errmsg string due to issues in the string destructor
+            v8::Local<v8::Object> errorObject = Nan::New<v8::Object>();
 
             Utility::Set(errorObject, "errno", errorCode);
             Utility::Set(errorObject, "errcode", ConversionUtility::valueToString(errorCode, error_message_name_map));
             Utility::Set(errorObject, "erroperation", ConversionUtility::toJsString(customMessage));
-            Utility::Set(errorObject, "errmsg", ConversionUtility::toJsString(errorStringStream.str()));
 
-            return scope.Escape(error);
+            return scope.Escape(errorObject);
         }
     }
 }
@@ -894,7 +880,7 @@ v8::Local<v8::String> ErrorMessage::getTypeErrorMessage(const int argumentNumber
 
     stream << " argument must be a " << message;
 
-    return Nan::To<v8::String>(ConversionUtility::toJsString(stream.str())).ToLocalChecked();
+    return ConversionUtility::toJsString(stream.str())->ToString();
 }
 
 v8::Local<v8::String> ErrorMessage::getStructErrorMessage(const std::string name, const std::string message)
@@ -903,7 +889,7 @@ v8::Local<v8::String> ErrorMessage::getStructErrorMessage(const std::string name
 
     stream << "Property: " << name << " Message: " << message;
 
-    return Nan::To<v8::String>(ConversionUtility::toJsString(stream.str())).ToLocalChecked();
+    return ConversionUtility::toJsString(stream.str())->ToString();
 }
 
 v8::Local<v8::Value> HciStatus::getHciStatus(int statusCode)

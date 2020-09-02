@@ -215,14 +215,24 @@ v8::Local<v8::Object> GattcPrimaryServiceDiscoveryEvent::ToJs()
 
     for (auto i = 0; i < evt->count; ++i)
     {
-        Nan::Set(service_array, i, GattcService(&evt->services[i]));
+        service_array->Set(Nan::New<v8::Integer>(i), GattcService(&evt->services[i]));
     }
 
     Utility::Set(obj, "services", service_array);
 
     return scope.Escape(obj);
 }
+#if NRF_SD_BLE_API_VERSION >= 5
+v8::Local<v8::Object> GattcTxCompleteEvent::ToJs()
+{
+    Nan::EscapableHandleScope scope;
+    v8::Local<v8::Object> obj = Nan::New<v8::Object>();
+    BleDriverGattcEvent::ToJs(obj);
 
+    Utility::Set(obj, "count", ConversionUtility::toJsNumber(evt->count));
+    return scope.Escape(obj);
+}
+#endif
 v8::Local<v8::Object> GattcRelationshipDiscoveryEvent::ToJs()
 {
     Nan::EscapableHandleScope scope;
@@ -235,7 +245,7 @@ v8::Local<v8::Object> GattcRelationshipDiscoveryEvent::ToJs()
 
     for (auto i = 0; i < evt->count; ++i)
     {
-        Nan::Set(includes_array, i, GattcIncludedService(&evt->includes[i]));
+        includes_array->Set(Nan::New<v8::Integer>(i), GattcIncludedService(&evt->includes[i]));
     }
 
     Utility::Set(obj, "includes", includes_array);
@@ -255,7 +265,7 @@ v8::Local<v8::Object> GattcCharacteristicDiscoveryEvent::ToJs()
 
     for (auto i = 0; i < evt->count; ++i)
     {
-        Nan::Set(chars_array, i, GattcCharacteristic(&evt->chars[i]));
+        chars_array->Set(Nan::New<v8::Integer>(i), GattcCharacteristic(&evt->chars[i]));
     }
 
     Utility::Set(obj, "chars", chars_array);
@@ -275,7 +285,7 @@ v8::Local<v8::Object> GattcDescriptorDiscoveryEvent::ToJs()
 
     for (auto i = 0; i < evt->count; ++i)
     {
-        Nan::Set(descs_array, i, GattcDescriptor(&evt->descs[i]));
+        descs_array->Set(Nan::New<v8::Integer>(i), GattcDescriptor(&evt->descs[i]));
     }
 
     Utility::Set(obj, "descs", descs_array);
@@ -307,7 +317,7 @@ v8::Local<v8::Object> GattcCharacteristicValueReadByUUIDEvent::ToJs()
 
     for (auto i = 0; i < evt->count; ++i)
     {
-        Nan::Set(handle_value_array, i, GattcHandleValue(&evt->handle_value[i], evt->value_len));
+        handle_value_array->Set(Nan::New<v8::Integer>(i), GattcHandleValue(&evt->handle_value[i], evt->value_len));
     }
 
     Utility::Set(obj, "handle_values", handle_value_array);
@@ -384,7 +394,7 @@ v8::Local<v8::Object> GattcTimeoutEvent::ToJs()
     return scope.Escape(obj);
 }
 
-#if NRF_SD_BLE_API_VERSION >= 5
+#if NRF_SD_BLE_API_VERSION >= 3
 v8::Local<v8::Object> GattcExchangeMtuResponseEvent::ToJs()
 {
 	Nan::EscapableHandleScope scope;
@@ -394,17 +404,6 @@ v8::Local<v8::Object> GattcExchangeMtuResponseEvent::ToJs()
 	Utility::Set(obj, "server_rx_mtu", evt->server_rx_mtu);
 
 	return scope.Escape(obj);
-}
-
-v8::Local<v8::Object> GattcWriteCmdTxCompleteEvent::ToJs()
-{
-    Nan::EscapableHandleScope scope;
-    v8::Local<v8::Object> obj = Nan::New<v8::Object>();
-    BleDriverGattcEvent::ToJs(obj);
-
-    Utility::Set(obj, "count", ConversionUtility::toJsNumber(evt->count));
-
-    return scope.Escape(obj);
 }
 #endif
 
@@ -901,7 +900,7 @@ NAN_METHOD(Adapter::GattcReadCharacteristicValues)
     {
         for (auto i = 0; i < handle_count; ++i)
         {
-            p_handles[i] = ConversionUtility::getNativeUint16(Nan::Get(handles, i).ToLocalChecked());
+            p_handles[i] = ConversionUtility::getNativeUint16(handles->Get(Nan::New<v8::Number>(i)));
         }
     }
     catch (std::string error)
@@ -1087,7 +1086,7 @@ void Adapter::AfterGattcConfirmHandleValue(uv_work_t *req)
     delete baton;
 }
 
-#if NRF_SD_BLE_API_VERSION >= 5
+#if NRF_SD_BLE_API_VERSION >= 3
 NAN_METHOD(Adapter::GattcExchangeMtuRequest)
 {
     uint16_t conn_handle;
@@ -1170,7 +1169,7 @@ extern "C" {
         NODE_DEFINE_CONSTANT(target, SD_BLE_GATTC_CHAR_VALUES_READ);                               /**< Read multiple Characteristic Values. */
         NODE_DEFINE_CONSTANT(target, SD_BLE_GATTC_WRITE);                                          /**< Generic write. */
         NODE_DEFINE_CONSTANT(target, SD_BLE_GATTC_HV_CONFIRM);                                     /**< Handle Value Confirmation. */
-#if NRF_SD_BLE_API_VERSION >= 5
+#if NRF_SD_BLE_API_VERSION >= 3
 		NODE_DEFINE_CONSTANT(target, SD_BLE_GATTC_EXCHANGE_MTU_REQUEST);                           /**< Exchange MTU Request */
 #endif
 
@@ -1184,7 +1183,7 @@ extern "C" {
         NODE_DEFINE_CONSTANT(target, BLE_GATTC_EVT_WRITE_RSP);                                /**< Write Response event. @ref ble_gattc_evt_write_rsp_t */
         NODE_DEFINE_CONSTANT(target, BLE_GATTC_EVT_HVX);                                      /**< Handle Value Notification or Indication event. @ref ble_gattc_evt_hvx_t */
         NODE_DEFINE_CONSTANT(target, BLE_GATTC_EVT_TIMEOUT);                                  /**< Timeout event. @ref ble_gattc_evt_timeout_t */
-#if NRF_SD_BLE_API_VERSION >= 5
+#if NRF_SD_BLE_API_VERSION >= 3
         NODE_DEFINE_CONSTANT(target, BLE_GATTC_EVT_EXCHANGE_MTU_RSP);                         /**< Exchange MTU Response event. @ref ble_gattc_evt_exchange_mtu_rsp_t. */
 #endif
     }

@@ -38,14 +38,15 @@
 
 const os = require('os');
 
-const _bleDriverV2 = require('bindings')('pc-ble-driver-js-sd_api_v2');
-const _bleDriverV5 = require('bindings')('pc-ble-driver-js-sd_api_v5');
+//const _bleDriverV2 = require('bindings')('pc-ble-driver-js-sd_api_v2');
+//const _bleDriverV3 = require('bindings')('pc-ble-driver-js-sd_api_v3');
+const _bleDriverV6 = require('bindings')('pc-ble-driver-js-sd_api_v6');
 
 const Adapter = require('./adapter');
 const logLevel = require('./util/logLevel');
 const EventEmitter = require('events');
 
-const _bleDrivers = { v2: _bleDriverV2, v5: _bleDriverV5 };
+const _bleDrivers = { v6: _bleDriverV6 };
 const _singleton = Symbol('Ensure that only one instance of AdapterFactory ever exists.');
 
 /** @constant {number} Update interval, in milliseconds, at which PC shall be checked for new connected adapters. */
@@ -161,8 +162,8 @@ class AdapterFactory extends EventEmitter {
 
         if (adapter.serialNumber) {
             instanceId = adapter.serialNumber;
-        } else if (adapter.path) {
-            instanceId = adapter.path;
+        } else if (adapter.comName) {
+            instanceId = adapter.comName;
         } else {
             this.emit('error', 'Failed to get adapter\'s instanceId.');
         }
@@ -192,10 +193,13 @@ class AdapterFactory extends EventEmitter {
                     sdVersion = 'v2';
                     break;
                 case 2:
-                    sdVersion = 'v5';
+                    sdVersion = 'v3';
                     break;
                 case 3:
-                    sdVersion = 'v5';
+                    sdVersion = 'v3';
+                    break;
+                case 6:
+                    sdVersion = 'v6';
                     break;
                 default:
                     throw new Error(`Unsupported nRF5 development kit. [${instanceId}]`);
@@ -219,7 +223,7 @@ class AdapterFactory extends EventEmitter {
             notSupportedMessage = 'Note: Adapters with Segger JLink debug probe requires MSD to be disabled to function properly on OSX. Please visit www.nordicsemi.com/nRFConnectOSXfix for further instructions.';
         }
 
-        return new Adapter(selectedDriver, addOnAdapter, instanceId, adapter.path, adapter.serialNumber, notSupportedMessage);
+        return new Adapter(selectedDriver, addOnAdapter, instanceId, adapter.comName, adapter.serialNumber, notSupportedMessage);
     }
 
     _setUpListenersForAdapterOpenAndClose(adapter) {
@@ -234,7 +238,7 @@ class AdapterFactory extends EventEmitter {
     // TODO: create a separate npm module that gets connected adapters and information about them
     _updateAdapterList(callback) {
         // for getting the adapters we just use pc-ble-driver AddOn v2
-        this._bleDrivers.v2.getAdapters((err, adapters) => {
+        this._bleDrivers.v6.getAdapters((err, adapters) => {
             const isCallback = callback && (typeof callback === 'function');
 
             if (err) {
@@ -308,17 +312,17 @@ class AdapterFactory extends EventEmitter {
     /**
      * Create Adapter with custom serialport
      *
-     * @param sdVersion {string} Softdevice API version: 'v2' or 'v5'.
-     * @param path {string} Serialport name (eg. 'COM7' on windows).
+     * @param sdVersion {string} Softdevice API version: 'v2' or 'v3'.
+     * @param comName {string} Serialport name (eg. 'COM7' on windows).
      * @param instanceId {string} The unique Id that identifies this Adapter instance.
      * @returns {Adapter} Created adapter.
      */
-    createAdapter(sdVersion, path, instanceId) {
-        if (sdVersion !== 'v2' && sdVersion !== 'v5') {
+    createAdapter(sdVersion, comName, instanceId) {
+        if (sdVersion !== 'v6') {
             throw new Error('Unsupported soft-device version!');
         }
-        if (typeof path === 'undefined') {
-            throw new Error('Missing parameter: path!');
+        if (typeof comName === 'undefined') {
+            throw new Error('Missing parameter: comName!');
         }
         if (typeof instanceId === 'undefined') {
             throw new Error('Missing parameter: instanceId!');
@@ -327,7 +331,7 @@ class AdapterFactory extends EventEmitter {
         const selectedDriver = this._bleDrivers[sdVersion];
         const addOnAdapter = new selectedDriver.Adapter();
 
-        return new Adapter(selectedDriver, addOnAdapter, instanceId, path);
+        return new Adapter(selectedDriver, addOnAdapter, instanceId, comName);
     }
 }
 
